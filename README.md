@@ -1,4 +1,4 @@
-# Palo Alto Firewall Pair Deployment
+# Palo Alto Firewall Pair Deployment (AI Assisted)
 
 A comprehensive web-based deployment tool for configuring and managing **Palo Alto Networks (PAN-OS 11.2)** firewall pairs in High Availability (HA) mode.
 
