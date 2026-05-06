@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PA Firewall Deployment</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:      #0d1117;
+    --surface: #161b22;
+    --border:  #30363d;
+    --text:    #e6edf3;
+    --muted:   #8b949e;
+    --accent:  #1f6feb;
+    --success: #238636;
+    --danger:  #da3633;
+    --mono:    'Courier New', monospace;
+  }
+  body { background:var(--bg); color:var(--text);
+         font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+         font-size:14px; line-height:1.6; }
+  .shell { display:grid; grid-template-columns:220px 1fr;
+           grid-template-rows:52px 1fr; min-height:100vh; }
+  header { grid-column:1/-1; background:var(--surface);
+           border-bottom:1px solid var(--border);
+           display:flex; align-items:center; padding:0 24px; gap:12px; }
+  header h1 { font-size:15px; font-weight:600; flex:1; }
+  .tag { font-size:11px; padding:2px 8px; border-radius:12px;
+         background:#1f3a5f; color:#79c0ff; border:1px solid #1f6feb; }
+  .tag-xml  { background:#2d1f3a; color:#d2a8ff; border-color:#8957e5; }
+  .tag-rest { background:#1f3a2d; color:#7ee787; border-color:#238636; }
+  sidebar { grid-row:2; background:var(--surface);
+            border-right:1px solid var(--border);
+            padding:16px 0; display:flex; flex-direction:column; gap:2px; }
+  .nav-label { font-size:11px; color:var(--muted); padding:8px 20px 4px;
+               text-transform:uppercase; letter-spacing:.08em; }
+  .nav-item  { padding:8px 20px; cursor:pointer; border-left:3px solid transparent;
+               color:var(--muted); font-size:13px; transition:all .15s;
+               display:flex; align-items:center; justify-content:space-between; }
+  .nav-item:hover  { color:var(--text); background:rgba(255,255,255,.04); }
+  .nav-item.active { color:#79c0ff; border-left-color:var(--accent);
+                     background:rgba(31,111,235,.1); }
+  .nav-sep { height:1px; background:var(--border); margin:8px 16px; }
+  main { grid-row:2; padding:28px 32px; overflow-y:auto; }
+  .section { display:none; }
+  .section.active { display:block; }
+  .card { background:var(--surface); border:1px solid var(--border);
+          border-radius:8px; padding:20px 24px; margin-bottom:16px; }
+  .card-title { font-size:13px; font-weight:600; color:var(--muted);
+                text-transform:uppercase; letter-spacing:.06em; margin-bottom:16px;
+                display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .api-badge { font-size:10px; padding:1px 7px; border-radius:4px; font-weight:600; }
+  .xml-badge  { background:#2d1f3a; color:#d2a8ff; border:1px solid #8957e5; }
+  .rest-badge { background:#1f3a2d; color:#7ee787; border:1px solid #238636; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  .grid4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:12px; }
+  .field { display:flex; flex-direction:column; gap:4px; }
+  .field label { font-size:11px; color:var(--muted); font-weight:500;
+                 text-transform:uppercase; letter-spacing:.05em; }
+  .field input, .field select {
+    background:var(--bg); border:1px solid var(--border); color:var(--text);
+    padding:7px 10px; border-radius:6px; font-size:13px; width:100%;
+    font-family:var(--mono); transition:border-color .15s; }
+  .field input:focus, .field select:focus { outline:none; border-color:var(--accent); }
+  .pair-label { font-size:11px; padding:2px 10px; border-radius:12px;
+                font-weight:600; margin-bottom:12px; display:inline-block; }
+  .badge-active  { background:rgba(35,134,54,.15); color:#3fb950; border:1px solid #238636; }
+  .badge-passive { background:rgba(110,118,129,.1); color:var(--muted); border:1px solid var(--border); }
+  .console-box { background:#010409; border:1px solid var(--border); border-radius:6px;
+                 padding:14px 16px; font-family:var(--mono); font-size:12px;
+                 color:#7ee787; line-height:1.8; white-space:pre; overflow-x:auto; }
+  .console-box .cm { color:var(--muted); }
+  .console-box .pr { color:#79c0ff; }
+  .status-row { display:flex; align-items:center; gap:10px; margin-top:10px;
+                padding:8px 12px; background:var(--bg); border:1px solid var(--border);
+                border-radius:6px; font-size:12px; }
+  .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .dot-idle    { background:var(--muted); }
+  .dot-ok      { background:#3fb950; }
+  .dot-err     { background:#f85149; }
+  .dot-pending { background:#e3b341; animation:pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .resp-panel { background:var(--bg); border:1px solid var(--border);
+                border-radius:6px; padding:12px 14px; margin-top:12px;
+                font-family:var(--mono); font-size:12px; color:var(--muted);
+                min-height:48px; max-height:200px; overflow-y:auto;
+                white-space:pre-wrap; line-height:1.5; }
+  .resp-panel.ok   { border-color:var(--success); color:#3fb950; }
+  .resp-panel.err  { border-color:var(--danger);  color:#f85149; }
+  .resp-panel.warn { border-color:#9e6a03; color:#e3b341; }
+  .btn-row { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  .btn { padding:7px 18px; border-radius:6px; font-size:13px; font-weight:500;
+         cursor:pointer; border:1px solid transparent; transition:all .15s; }
+  .btn-primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .btn-primary:hover { background:#388bfd; }
+  .btn-success { background:var(--success); color:#fff; }
+  .btn-success:hover { background:#2ea043; }
+  .btn-ghost   { background:transparent; color:var(--muted); border-color:var(--border); }
+  .btn-ghost:hover { color:var(--text); border-color:var(--muted); }
+  .btn-danger  { background:transparent; color:#f85149; border-color:var(--danger); }
+  .btn-danger:hover { background:rgba(218,54,51,.1); }
+  .btn:disabled { opacity:.4; cursor:not-allowed; }
+  .divider { height:1px; background:var(--border); margin:16px 0; }
+  .deploy-step { display:flex; align-items:center; gap:12px; padding:8px 12px;
+                 border-radius:6px; margin-bottom:4px; font-size:13px; }
+  .deploy-step:hover { background:rgba(255,255,255,.03); }
+  .step-api { font-size:10px; padding:1px 6px; border-radius:4px;
+              font-weight:600; margin-left:auto; }
+  .policy-table { width:100%; border-collapse:collapse; }
+  .policy-table th { font-size:11px; color:var(--muted); text-align:left;
+                     padding:6px 8px; border-bottom:1px solid var(--border);
+                     text-transform:uppercase; letter-spacing:.05em; }
+  .policy-table td { padding:5px 6px; border-bottom:1px solid var(--border); }
+  .policy-table td input, .policy-table td select {
+    background:var(--bg); border:1px solid transparent; color:var(--text);
+    padding:4px 6px; border-radius:4px; font-size:12px; width:100%;
+    font-family:var(--mono); }
+  .policy-table td input:focus, .policy-table td select:focus {
+    outline:none; border-color:var(--accent); }
+  .log-entry { padding:6px 0; border-bottom:1px solid var(--border);
+               font-family:var(--mono); font-size:12px; }
+  .log-ts   { color:var(--muted); margin-right:6px; }
+  .log-ok   { color:#3fb950; }
+  .log-err  { color:#f85149; }
+  .log-xml  { color:#d2a8ff; font-size:10px; margin:0 4px; }
+  .log-rest { color:#7ee787;  font-size:10px; margin:0 4px; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<header>
+  <h1>Palo Alto Firewall Pair Deployment</h1>
+  <span class="tag">PAN-OS 11.2</span>
+  <span class="tag tag-xml">XML API</span>
+  <span class="tag tag-rest">REST API</span>
+  <span class="tag" id="proxy-tag" style="background:#3a1f1f;color:#f85149;border-color:#da3633;">proxy offline</span>
+</header>
+
+<sidebar>
+  <div class="nav-label">Configuration</div>
+  <div class="nav-item active" onclick="nav('s-setup',this)">Firewall Pair Setup</div>
+  <div class="nav-item" onclick="nav('s-ha',this)">HA Settings <span class="api-badge xml-badge">XML</span></div>
+  <div class="nav-item" onclick="nav('s-iface',this)">Interfaces &amp; Zones <span class="api-badge rest-badge">REST</span></div>
+  <div class="nav-item" onclick="nav('s-routing',this)">Routing <span class="api-badge rest-badge">REST</span></div>
+  <div class="nav-item" onclick="nav('s-policy',this)">Security Policy <span class="api-badge rest-badge">REST</span></div>
+  <div class="nav-sep"></div>
+  <div class="nav-label">Actions</div>
+  <div class="nav-item" onclick="nav('s-deploy',this)">Deploy All</div>
+  <div class="nav-item" onclick="nav('s-log',this)">Audit Log</div>
+</sidebar>
+
+<main>
+
+<!-- SETUP -->
+<div class="section active" id="s-setup">
+  <div class="card">
+    <div class="card-title">Firewall Pair Identity</div>
+    <div class="grid3">
+      <div class="field"><label>Deployment name</label>
+        <input id="deploy-name" placeholder="e.g. Site1-HQ" oninput="updateConsole()" /></div>
+      <div class="field"><label>Mgmt default gateway</label>
+        <input id="mgmt-gw" value="192.168.63.1" oninput="updateConsole()" /></div>
+      <div class="field"><label>Mgmt subnet mask</label>
+        <input id="mgmt-mask" value="255.255.255.0" oninput="updateConsole()" /></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Initial Firewall Credentials
+      <span style="font-size:11px;color:var(--muted);text-transform:none;
+        letter-spacing:0;font-weight:400;">used only for first connection &amp; user creation</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:14px;">
+      PAN-OS forces a password change on first login. Enter the current admin
+      credentials here. After <code style="color:#7ee787">local/test123!</code>
+      is created and committed, these credentials are no longer used.
+    </p>
+    <div class="grid2">
+      <div class="field"><label>Username</label>
+        <input id="init-user" value="admin" /></div>
+      <div class="field"><label>Password</label>
+        <input id="init-password" type="password" placeholder="current admin password" /></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <span class="pair-label badge-active">FW1 — Primary (Active)</span>
+    <div class="grid2">
+      <div class="field"><label>Hostname</label>
+        <input id="fw1-hostname" placeholder="fw1-prod" oninput="updateConsole()" /></div>
+      <div class="field"><label>Management IP</label>
+        <input id="fw1-mgmt-ip" placeholder="192.168.63.x" oninput="updateConsole()" /></div>
+    </div>
+    <div class="status-row">
+      <span class="dot dot-idle" id="dot-fw1"></span>
+      <span id="lbl-fw1" style="color:var(--muted)">Not tested</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="testConn(1)">Test FW1 connection</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <span class="pair-label badge-passive">FW2 — Secondary (Passive)</span>
+    <div class="grid2">
+      <div class="field"><label>Hostname</label>
+        <input id="fw2-hostname" placeholder="fw2-prod" oninput="updateConsole()" /></div>
+      <div class="field"><label>Management IP</label>
+        <input id="fw2-mgmt-ip" placeholder="192.168.63.x" oninput="updateConsole()" /></div>
+    </div>
+    <div class="status-row">
+      <span class="dot dot-idle" id="dot-fw2"></span>
+      <span id="lbl-fw2" style="color:var(--muted)">Not tested</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="testConn(2)">Test FW2 connection</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Phase 0 — Console Commands
+      <span style="font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400;">
+        Run on each firewall via console before deploying
+      </span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:14px;">
+      Brand-new firewalls have no management IP and cannot be reached via API.
+      Connect via console cable and run these commands first. They update live as you type above.
+    </p>
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;
+      letter-spacing:.05em;margin-bottom:6px;">FW1 — Primary (Active)</div>
+    <div class="console-box" id="console-fw1">Fill in FW1 hostname and management IP above.</div>
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;
+      letter-spacing:.05em;margin:14px 0 6px;">FW2 — Secondary (Passive)</div>
+    <div class="console-box" id="console-fw2">Fill in FW2 hostname and management IP above.</div>
+  </div>
+</div>
+
+<!-- HA -->
+<div class="section" id="s-ha">
+  <div class="card">
+    <div class="card-title">HA Global Settings <span class="api-badge xml-badge">XML API</span></div>
+    <div class="grid4">
+      <div class="field"><label>Group ID</label><input id="ha-group" value="1" /></div>
+      <div class="field"><label>Mode</label>
+        <select id="ha-mode"><option>active-passive</option></select></div>
+      <div class="field"><label>Preemption</label>
+        <select id="ha-preempt"><option value="no">Disabled</option><option value="yes">Enabled</option></select></div>
+      <div class="field"><label>Config sync</label>
+        <select id="ha-cfgsync"><option value="yes">Enabled</option><option value="no">Disabled</option></select></div>
+    </div>
+    <div class="grid4" style="margin-top:12px">
+      <div class="field"><label>Hello interval (ms)</label><input id="ha-hello" value="8000" /></div>
+      <div class="field"><label>Heartbeat interval (ms)</label><input id="ha-hb" value="2000" /></div>
+      <div class="field"><label>Preemption hold (ms)</label><input id="ha-hold" value="1000" /></div>
+      <div class="field"><label>Session sync</label>
+        <select id="ha-sesssync"><option value="yes">Enabled</option><option value="no">Disabled</option></select></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">FW1 HA Interfaces <span class="api-badge xml-badge">XML API</span>
+      <span class="pair-label badge-active" style="margin-left:auto">Active</span></div>
+    <div class="grid3">
+      <div class="field"><label>HA1 port</label><input id="fw1-ha1-port" value="ethernet1/3" /></div>
+      <div class="field"><label>HA1 IP</label><input id="fw1-ha1-ip" value="169.254.1.1" /></div>
+      <div class="field"><label>HA1 netmask</label><input id="fw1-ha1-mask" value="255.255.255.252" /></div>
+    </div>
+    <div class="grid3" style="margin-top:12px">
+      <div class="field"><label>HA2 port</label><input id="fw1-ha2-port" value="ethernet1/3" /></div>
+      <div class="field"><label>HA2 IP</label><input id="fw1-ha2-ip" value="169.254.3.1" /></div>
+      <div class="field"><label>HA2 netmask</label><input id="fw1-ha2-mask" value="255.255.255.252" /></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="pushHA(1)">Push HA to FW1</button>
+    </div>
+    <div class="resp-panel" id="resp-ha-fw1">waiting...</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">FW2 HA Interfaces <span class="api-badge xml-badge">XML API</span>
+      <span class="pair-label badge-passive" style="margin-left:auto">Passive</span></div>
+    <div class="grid3">
+      <div class="field"><label>HA1 port</label><input id="fw2-ha1-port" value="ethernet1/3" /></div>
+      <div class="field"><label>HA1 IP</label><input id="fw2-ha1-ip" value="169.254.1.2" /></div>
+      <div class="field"><label>HA1 netmask</label><input id="fw2-ha1-mask" value="255.255.255.252" /></div>
+    </div>
+    <div class="grid3" style="margin-top:12px">
+      <div class="field"><label>HA2 port</label><input id="fw2-ha2-port" value="ethernet1/3" /></div>
+      <div class="field"><label>HA2 IP</label><input id="fw2-ha2-ip" value="169.254.3.2" /></div>
+      <div class="field"><label>HA2 netmask</label><input id="fw2-ha2-mask" value="255.255.255.252" /></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="pushHA(2)">Push HA to FW2</button>
+    </div>
+    <div class="resp-panel" id="resp-ha-fw2">waiting...</div>
+  </div>
+</div>
+
+<!-- INTERFACES -->
+<div class="section" id="s-iface">
+  <div class="card">
+    <div class="card-title">Security Zones <span class="api-badge rest-badge">REST API</span></div>
+    <div class="grid2">
+      <div class="field"><label>Zone 1 — external</label><input id="zone-untrust" value="untrust" /></div>
+      <div class="field"><label>Zone 2 — internal</label><input id="zone-inside" value="inside" /></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="pushZones(1)">Push zones to FW1</button>
+      <button class="btn btn-primary" onclick="pushZones(2)">Push zones to FW2</button>
+    </div>
+    <div class="resp-panel" id="resp-zones">waiting...</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">FW1 Interfaces <span class="api-badge rest-badge">REST API</span>
+      <span class="pair-label badge-active" style="margin-left:auto">Active</span></div>
+    <div class="grid4" style="margin-bottom:12px">
+      <div class="field"><label>eth1/1 IP (untrust)</label><input id="fw1-eth1-ip" value="192.168.10.1" /></div>
+      <div class="field"><label>eth1/1 mask</label><input id="fw1-eth1-mask" value="255.255.255.252" /></div>
+      <div class="field"><label>eth1/1 floating IP</label><input id="fw1-eth1-float" value="192.168.10.9" /></div>
+      <div class="field"><label>eth1/1 float mask</label><input id="fw1-eth1-float-mask" value="255.255.255.252" /></div>
+    </div>
+    <div class="grid4">
+      <div class="field"><label>eth1/2 IP (inside)</label><input id="fw1-eth2-ip" value="10.1.0.1" /></div>
+      <div class="field"><label>eth1/2 mask</label><input id="fw1-eth2-mask" value="255.255.255.0" /></div>
+      <div class="field"><label>eth1/2 floating IP</label><input id="fw1-eth2-float" value="10.1.0.254" /></div>
+      <div class="field"><label>eth1/2 float mask</label><input id="fw1-eth2-float-mask" value="255.255.255.0" /></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="pushIfaces(1)">Push interfaces to FW1</button>
+    </div>
+    <div class="resp-panel" id="resp-iface-fw1">waiting...</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">FW2 Interfaces <span class="api-badge rest-badge">REST API</span>
+      <span class="pair-label badge-passive" style="margin-left:auto">Passive</span></div>
+    <div class="grid4" style="margin-bottom:12px">
+      <div class="field"><label>eth1/1 IP (untrust)</label><input id="fw2-eth1-ip" value="192.168.10.5" /></div>
+      <div class="field"><label>eth1/1 mask</label><input id="fw2-eth1-mask" value="255.255.255.252" /></div>
+      <div class="field"><label>eth1/1 floating IP</label><input id="fw2-eth1-float" value="192.168.10.9" /></div>
+      <div class="field"><label>eth1/1 float mask</label><input id="fw2-eth1-float-mask" value="255.255.255.252" /></div>
+    </div>
+    <div class="grid4">
+      <div class="field"><label>eth1/2 IP (inside)</label><input id="fw2-eth2-ip" value="10.1.0.2" /></div>
+      <div class="field"><label>eth1/2 mask</label><input id="fw2-eth2-mask" value="255.255.255.0" /></div>
+      <div class="field"><label>eth1/2 floating IP</label><input id="fw2-eth2-float" value="10.1.0.254" /></div>
+      <div class="field"><label>eth1/2 float mask</label><input id="fw2-eth2-float-mask" value="255.255.255.0" /></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="pushIfaces(2)">Push interfaces to FW2</button>
+    </div>
+    <div class="resp-panel" id="resp-iface-fw2">waiting...</div>
+  </div>
+</div>
+
+<!-- ROUTING -->
+<div class="section" id="s-routing">
+  <div class="card">
+    <div class="card-title">Virtual Router <span class="api-badge rest-badge">REST API</span></div>
+    <div class="grid2">
+      <div class="field"><label>VR name</label><input id="vr-name" value="default" /></div>
+      <div class="field"><label>ECMP</label>
+        <select id="vr-ecmp"><option value="no">Disabled</option><option value="yes">Enabled</option></select></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">FW1 Static Routes <span class="api-badge rest-badge">REST API</span>
+      <span class="pair-label badge-active" style="margin-left:auto">Active</span></div>
+    <div class="grid4">
+      <div class="field"><label>Route name</label><input id="fw1-rt-name" value="default-route" /></div>
+      <div class="field"><label>Destination</label><input id="fw1-rt-dest" value="0.0.0.0/0" /></div>
+      <div class="field"><label>Next hop</label><input id="fw1-rt-nh" value="192.168.10.2" /></div>
+      <div class="field"><label>Interface</label><input id="fw1-rt-iface" value="ethernet1/1" /></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="pushRouting(1)">Push routing to FW1</button>
+    </div>
+    <div class="resp-panel" id="resp-routing-fw1">waiting...</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">FW2 Static Routes <span class="api-badge rest-badge">REST API</span>
+      <span class="pair-label badge-passive" style="margin-left:auto">Passive</span></div>
+    <div class="grid4">
+      <div class="field"><label>Route name</label><input id="fw2-rt-name" value="default-route" /></div>
+      <div class="field"><label>Destination</label><input id="fw2-rt-dest" value="0.0.0.0/0" /></div>
+      <div class="field"><label>Next hop</label><input id="fw2-rt-nh" value="192.168.10.6" /></div>
+      <div class="field"><label>Interface</label><input id="fw2-rt-iface" value="ethernet1/1" /></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="pushRouting(2)">Push routing to FW2</button>
+    </div>
+    <div class="resp-panel" id="resp-routing-fw2">waiting...</div>
+  </div>
+</div>
+
+<!-- POLICY -->
+<div class="section" id="s-policy">
+  <div class="card">
+    <div class="card-title">Baseline Security Rules <span class="api-badge rest-badge">REST API</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--muted);text-transform:none;
+        letter-spacing:0;font-weight:400">pushed to both FW1 and FW2</span></div>
+    <table class="policy-table">
+      <thead>
+        <tr><th>Rule name</th><th>From</th><th>To</th><th>Source</th>
+          <th>Destination</th><th>Application</th><th>Action</th><th></th></tr>
+      </thead>
+      <tbody id="policy-body">
+        <tr>
+          <td><input value="permit-inside-out" /></td>
+          <td><select><option>inside</option><option>untrust</option><option>any</option></select></td>
+          <td><select><option>untrust</option><option>inside</option><option>any</option></select></td>
+          <td><input value="any" /></td><td><input value="any" /></td><td><input value="any" /></td>
+          <td><select><option>allow</option><option>deny</option><option>drop</option></select></td>
+          <td><button class="btn btn-danger" style="padding:3px 8px;font-size:11px"
+            onclick="delRow(this)">x</button></td>
+        </tr>
+        <tr>
+          <td><input value="deny-all" /></td>
+          <td><select><option>any</option><option>inside</option><option>untrust</option></select></td>
+          <td><select><option>any</option><option>inside</option><option>untrust</option></select></td>
+          <td><input value="any" /></td><td><input value="any" /></td><td><input value="any" /></td>
+          <td><select><option>deny</option><option>allow</option><option>drop</option></select></td>
+          <td><button class="btn btn-danger" style="padding:3px 8px;font-size:11px"
+            onclick="delRow(this)">x</button></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="addPolicyRow()">+ add rule</button>
+      <button class="btn btn-primary" onclick="pushPolicy(1)">Push to FW1</button>
+      <button class="btn btn-primary" onclick="pushPolicy(2)">Push to FW2</button>
+    </div>
+    <div class="resp-panel" id="resp-policy">waiting...</div>
+  </div>
+</div>
+
+<!-- DEPLOY -->
+<div class="section" id="s-deploy">
+  <div class="card">
+    <div class="card-title">Full Deployment Sequence</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">
+      Executes all steps in order against both firewalls. A failure at any step halts the
+      deployment. Ensure Phase 0 console commands have been run and both connection tests
+      pass before proceeding.
+    </p>
+    <div class="deploy-step"><span class="dot dot-idle" id="dd-conn"></span>
+      <span>1. Verify connectivity (init credentials)</span>
+      <span class="step-api xml-badge api-badge">XML</span></div>
+    <div class="deploy-step"><span class="dot dot-idle" id="dd-user"></span>
+      <span>2. Create local user &amp; commit</span>
+      <span class="step-api xml-badge api-badge">XML</span></div>
+    <div class="deploy-step"><span class="dot dot-idle" id="dd-ha"></span>
+      <span>3. HA configuration</span>
+      <span class="step-api xml-badge api-badge">XML</span></div>
+    <div class="deploy-step"><span class="dot dot-idle" id="dd-zones"></span>
+      <span>4. Security zones</span>
+      <span class="step-api rest-badge api-badge">REST</span></div>
+    <div class="deploy-step"><span class="dot dot-idle" id="dd-iface"></span>
+      <span>5. Interfaces &amp; floating IPs</span>
+      <span class="step-api rest-badge api-badge">REST</span></div>
+    <div class="deploy-step"><span class="dot dot-idle" id="dd-routing"></span>
+      <span>6. Virtual router &amp; static routes</span>
+      <span class="step-api rest-badge api-badge">REST</span></div>
+    <div class="deploy-step"><span class="dot dot-idle" id="dd-policy"></span>
+      <span>7. Security policy</span>
+      <span class="step-api rest-badge api-badge">REST</span></div>
+    <div class="deploy-step"><span class="dot dot-idle" id="dd-commit"></span>
+      <span>8. Final commit</span>
+      <span class="step-api xml-badge api-badge">XML</span></div>
+    <div class="btn-row">
+      <button class="btn btn-success" id="btn-deploy" onclick="deployAll()">Deploy all &amp; commit</button>
+      <button class="btn btn-ghost" onclick="resetDeploy()">Reset</button>
+    </div>
+    <div class="resp-panel" id="resp-deploy" style="min-height:140px">
+      Ready — fill in Firewall Pair Setup and press Deploy all.
+    </div>
+  </div>
+</div>
+
+<!-- LOG -->
+<div class="section" id="s-log">
+  <div class="card">
+    <div class="card-title">Audit Log</div>
+    <div id="log-container" style="max-height:520px;overflow-y:auto;">
+      <div class="log-entry" style="color:var(--muted)">No entries yet.</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="clearLog()">Clear log</button>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<script>
+const PROXY    = 'http://localhost:8080';
+const REST_VER = 'v11.2';
+
+function nav(id, el) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  el.classList.add('active');
+}
+
+function gv(id)   { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
+function fwip(fw) { return gv(`fw${fw}-mgmt-ip`); }
+function cidr(mask) {
+  return mask.split('.').reduce((a,o) =>
+    a + parseInt(o).toString(2).split('').filter(b => b==='1').length, 0);
+}
+
+// ── PHASE 0 CONSOLE COMMANDS ─────────────────────────────
+function updateConsole() {
+  [1,2].forEach(fw => {
+    const ip   = gv(`fw${fw}-mgmt-ip`);
+    const host = gv(`fw${fw}-hostname`);
+    const mask = gv('mgmt-mask');
+    const gw   = gv('mgmt-gw');
+    const box  = document.getElementById(`console-fw${fw}`);
+    if (!ip || !host) {
+      box.textContent = `Fill in FW${fw} hostname and management IP above.`;
+      return;
+    }
+    box.innerHTML =
+      `<span class="cm"># Connect via console cable, then:</span>\n` +
+      `<span class="pr">admin@PA-VM></span> configure\n` +
+      `<span class="pr">#</span> set deviceconfig system hostname ${host}\n` +
+      `<span class="pr">#</span> set deviceconfig system ip-address ${ip}\n` +
+      `<span class="pr">#</span> set deviceconfig system netmask ${mask}\n` +
+      `<span class="pr">#</span> set deviceconfig system default-gateway ${gw}\n` +
+      `<span class="pr">#</span> set deviceconfig system dns-setting servers primary ${gw}\n` +
+      `<span class="pr">#</span> commit\n` +
+      `<span class="pr">#</span> exit\n` +
+      `<span class="cm"># Firewall now reachable at ${ip}</span>`;
+  });
+}
+
+// ── PROXY / API CALLS ────────────────────────────────────
+async function proxyCall(body) {
+  const r = await fetch(PROXY, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  return await r.json();
+}
+
+async function xmlCall(fw_ip, type, xpath, element, action, user, password) {
+  return proxyCall({
+    fw_ip, type, xpath, element,
+    action:   action   || 'set',
+    user:     user     || 'local',
+    password: password || 'test123!'
+  });
+}
+
+async function restCall(fw_ip, method, endpoint, payload, user, password) {
+  return proxyCall({
+    fw_ip, type: 'rest',
+    method:   method || 'POST',
+    endpoint: `/restapi/${REST_VER}/${endpoint}`,
+    payload:  payload || {},
+    user:     user     || 'local',
+    password: password || 'test123!'
+  });
+}
+
+function isOk(data) {
+  if (!data)                                                    return false;
+  if (data.error)                                               return false;
+  if (data.response && data.response.includes('status="error"')) return false;
+  if (data.http_code && data.http_code >= 400)                  return false;
+  return true;
+}
+
+function setResp(id, data, apiType) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const ok = isOk(data);
+  el.className  = 'resp-panel ' + (ok ? 'ok' : 'err');
+  el.textContent = data.error || data.response || JSON.stringify(data, null, 2);
+  addLog(id, ok, apiType || 'xml', data.error || data.response || '');
+}
+
+function setDot(id, state) {
+  const el = document.getElementById(id);
+  if (el) el.className = `dot dot-${state}`;
+}
+
+// ── AUDIT LOG ────────────────────────────────────────────
+function addLog(label, ok, apiType, msg) {
+  const c = document.getElementById('log-container');
+  if (c.children.length===1 && c.children[0].textContent==='No entries yet.')
+    c.innerHTML = '';
+  const d = document.createElement('div');
+  d.className = 'log-entry';
+  const api = apiType==='rest'
+    ? `<span class="log-rest">[REST]</span>`
+    : `<span class="log-xml">[XML]</span>`;
+  d.innerHTML =
+    `<span class="log-ts">${new Date().toLocaleTimeString()}</span>` +
+    `<span class="${ok?'log-ok':'log-err'}">[${ok?'OK':'ERR'}]</span>` +
+    api +
+    ` <span style="color:var(--muted)">${label}</span> — ` +
+    `<span style="color:var(--text)">${String(msg).substring(0,160)}</span>`;
+  c.prepend(d);
+}
+function clearLog() {
+  document.getElementById('log-container').innerHTML =
+    '<div class="log-entry" style="color:var(--muted)">No entries yet.</div>';
+}
+
+// ── PROXY HEALTH ─────────────────────────────────────────
+async function checkProxy() {
+  const tag = document.getElementById('proxy-tag');
+  try {
+    await fetch(PROXY, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({fw_ip:'0.0.0.0', type:'ping'}),
+      signal: AbortSignal.timeout(3000)
+    });
+    tag.textContent  = 'proxy online';
+    tag.style.cssText = 'background:#1a3a2a;color:#3fb950;border-color:#238636;';
+  } catch(e) {
+    tag.textContent  = 'proxy offline';
+    tag.style.cssText = 'background:#3a1f1f;color:#f85149;border-color:#da3633;';
+  }
+}
+
+// ── CONNECTION TEST ───────────────────────────────────────
+async function testConn(fw) {
+  const ip = fwip(fw);
+  if (!ip) { alert(`Enter FW${fw} management IP first.`); return; }
+  setDot(`dot-fw${fw}`, 'pending');
+  document.getElementById(`lbl-fw${fw}`).textContent = 'Testing...';
+  try {
+    const r = await proxyCall({fw_ip:ip, type:'keygen', user:gv('init-user'), password:gv('init-password')});
+    if (isOk(r)) {
+      setDot(`dot-fw${fw}`, 'ok');
+      document.getElementById(`lbl-fw${fw}`).style.color = '#3fb950';
+      document.getElementById(`lbl-fw${fw}`).textContent = `${ip} — reachable, ${gv('init-user')} OK`;
+      addLog(`fw${fw}-test`, true, 'xml', `${ip} reachable`);
+    } else {
+      setDot(`dot-fw${fw}`, 'err');
+      document.getElementById(`lbl-fw${fw}`).style.color = '#f85149';
+      document.getElementById(`lbl-fw${fw}`).textContent = `${ip} — unreachable or credentials wrong`;
+      addLog(`fw${fw}-test`, false, 'xml', r.error || r.response || '');
+    }
+  } catch(e) {
+    setDot(`dot-fw${fw}`, 'err');
+    document.getElementById(`lbl-fw${fw}`).textContent = `${ip} — ${e.message}`;
+  }
+}
+
+// ── CREATE LOCAL USER ────────────────────────────────────
+async function createLocalUser(fw_ip) {
+  return proxyCall({
+    fw_ip, type:'create_user',
+    user:gv('init-user'), password:gv('init-password'),
+    new_user:'local', new_password:'test123!'
+  });
+}
+
+// ── PUSH: HA (XML) ────────────────────────────────────────
+async function pushHA(fw) {
+  const ip      = fwip(fw);
+  const rid     = `resp-ha-fw${fw}`;
+  const base    = `/config/devices/entry[@name='localhost.localdomain']/deviceconfig/high-availability`;
+  const peerIp  = fw===1 ? gv('fw2-ha1-ip') : gv('fw1-ha1-ip');
+  const ha1port = gv(`fw${fw}-ha1-port`);
+  const ha1ip   = gv(`fw${fw}-ha1-ip`);
+  const ha1mask = gv(`fw${fw}-ha1-mask`);
+  const ha2port = gv(`fw${fw}-ha2-port`);
+  const ha2ip   = gv(`fw${fw}-ha2-ip`);
+  const ha2mask = gv(`fw${fw}-ha2-mask`);
+
+  const calls = [
+    { xpath: base,
+      element: `<enabled>yes</enabled>`
+        + `<group><id>${gv('ha-group')}</id>`
+        + `<mode><active-passive><passive-link-state>auto</passive-link-state></active-passive></mode>`
+        + `<configuration-synchronization><enabled>${gv('ha-cfgsync')}</enabled></configuration-synchronization>`
+        + `<state-synchronization><enabled>${gv('ha-sesssync')}</enabled></state-synchronization>`
+        + `<election-option><preemptive>${gv('ha-preempt')}</preemptive></election-option>`
+        + `</group>` },
+    { xpath: `${base}/interface/ha1`,
+      element: `<port>${ha1port}</port><ip-address>${ha1ip}</ip-address><netmask>${ha1mask}</netmask>` },
+    { xpath: `${base}/interface/ha2`,
+      element: `<port>${ha2port}</port><ip-address>${ha2ip}</ip-address><netmask>${ha2mask}</netmask>` },
+    { xpath: `${base}/group/peer-ip`, element: `${peerIp}` }
+  ];
+  await xmlRunSeq(ip, calls, rid, 'local', 'test123!');
+}
+
+// ── PUSH: ZONES (REST) ────────────────────────────────────
+async function pushZones(fw) {
+  const ip  = fwip(fw);
+  const rid = 'resp-zones';
+  for (const zn of [gv('zone-untrust'), gv('zone-inside')]) {
+    const r = await restCall(ip, 'POST', 'Network/Zones',
+      {entry: {'@name': zn, network: {layer3: {}}}});
+    if (!isOk(r)) { setResp(rid, r, 'rest'); return; }
+    addLog(`zones-fw${fw}`, true, 'rest', `zone ${zn} created`);
+  }
+  const el = document.getElementById(rid);
+  el.className  = 'resp-panel ok';
+  el.textContent = `Zones pushed to FW${fw} successfully.`;
+}
+
+// ── PUSH: INTERFACES (REST) ───────────────────────────────
+async function pushIfaces(fw) {
+  const ip      = fwip(fw);
+  const rid     = `resp-iface-fw${fw}`;
+  const e1ip    = gv(`fw${fw}-eth1-ip`);
+  const e1mask  = gv(`fw${fw}-eth1-mask`);
+  const e1float = gv(`fw${fw}-eth1-float`);
+  const e1fmask = gv(`fw${fw}-eth1-float-mask`);
+  const e2ip    = gv(`fw${fw}-eth2-ip`);
+  const e2mask  = gv(`fw${fw}-eth2-mask`);
+  const e2float = gv(`fw${fw}-eth2-float`);
+  const e2fmask = gv(`fw${fw}-eth2-float-mask`);
+  const zu      = gv('zone-untrust');
+  const zi      = gv('zone-inside');
+
+  const r1 = await restCall(ip, 'PUT', 'Network/EthernetInterfaces', {entry: {
+    '@name': 'ethernet1/1', layer3: { ip: { entry: [
+      {'@name': `${e1ip}/${cidr(e1mask)}`},
+      {'@name': `${e1float}/${cidr(e1fmask)}`, 'floating-ip': {}}
+    ]}}
+  }});
+  if (!isOk(r1)) { setResp(rid, r1, 'rest'); return; }
+
+  const r2 = await restCall(ip, 'PUT', 'Network/EthernetInterfaces', {entry: {
+    '@name': 'ethernet1/2', layer3: { ip: { entry: [
+      {'@name': `${e2ip}/${cidr(e2mask)}`},
+      {'@name': `${e2float}/${cidr(e2fmask)}`, 'floating-ip': {}}
+    ]}}
+  }});
+  if (!isOk(r2)) { setResp(rid, r2, 'rest'); return; }
+
+  const rz1 = await restCall(ip, 'PUT', `Network/Zones?name=${zu}`, {entry: {
+    '@name': zu, network: {layer3: {member: ['ethernet1/1']}}
+  }});
+  if (!isOk(rz1)) { setResp(rid, rz1, 'rest'); return; }
+
+  const rz2 = await restCall(ip, 'PUT', `Network/Zones?name=${zi}`, {entry: {
+    '@name': zi, network: {layer3: {member: ['ethernet1/2']}}
+  }});
+  if (!isOk(rz2)) { setResp(rid, rz2, 'rest'); return; }
+
+  const el = document.getElementById(rid);
+  el.className  = 'resp-panel ok';
+  el.textContent = `Interfaces and zone bindings pushed to FW${fw} successfully.`;
+  addLog(`ifaces-fw${fw}`, true, 'rest', 'eth1/1 + eth1/2 configured with floating IPs');
+}
+
+// ── PUSH: ROUTING (REST) ─────────────────────────────────
+async function pushRouting(fw) {
+  const ip  = fwip(fw);
+  const rid = `resp-routing-fw${fw}`;
+  const vr  = gv('vr-name');
+  const r   = await restCall(ip, 'PUT', `Network/VirtualRouters?name=${vr}`, {entry: {
+    '@name': vr,
+    interface: {member: ['ethernet1/1', 'ethernet1/2']},
+    'routing-table': { ip: { 'static-route': { entry: [{
+      '@name':      gv(`fw${fw}-rt-name`),
+      destination:  gv(`fw${fw}-rt-dest`),
+      nexthop:     {'ip-address': gv(`fw${fw}-rt-nh`)},
+      interface:    gv(`fw${fw}-rt-iface`)
+    }]}}}
+  }});
+  setResp(rid, r, 'rest');
+}
+
+// ── PUSH: POLICY (REST) ──────────────────────────────────
+async function pushPolicy(fw) {
+  const ip  = fwip(fw);
+  const rid = 'resp-policy';
+  for (const row of document.querySelectorAll('#policy-body tr')) {
+    const inp = row.querySelectorAll('input');
+    const sel = row.querySelectorAll('select');
+    const r   = await restCall(ip, 'POST', 'Policies/SecurityRules', {entry: {
+      '@name':       inp[0].value.trim(),
+      from:         {member: [sel[0].value]},
+      to:           {member: [sel[1].value]},
+      source:       {member: [inp[1].value.trim()]},
+      destination:  {member: [inp[2].value.trim()]},
+      application:  {member: [inp[3].value.trim()]},
+      service:      {member: ['application-default']},
+      action:        sel[2].value
+    }});
+    if (!isOk(r)) { setResp(rid, r, 'rest'); return; }
+    addLog(`policy-fw${fw}`, true, 'rest', `rule ${inp[0].value} pushed`);
+  }
+  const el = document.getElementById(rid);
+  el.className  = 'resp-panel ok';
+  el.textContent = `All security rules pushed to FW${fw} successfully.`;
+}
+
+// ── XML RUN SEQUENCE ─────────────────────────────────────
+async function xmlRunSeq(fw_ip, calls, respId, user, password) {
+  let last;
+  for (const c of calls) {
+    last = await xmlCall(fw_ip, 'config', c.xpath, c.element, c.action||'set', user, password);
+    if (!isOk(last)) { setResp(respId, last, 'xml'); return false; }
+  }
+  setResp(respId, last, 'xml');
+  return true;
+}
+
+// ── DEPLOY ALL ────────────────────────────────────────────
+async function deployAll() {
+  const ip1 = fwip(1), ip2 = fwip(2);
+  if (!ip1 || !ip2) {
+    alert('Enter both management IPs in Firewall Pair Setup before deploying.');
+    return;
+  }
+  const btn = document.getElementById('btn-deploy');
+  btn.disabled = true;
+  resetDeploy();
+  const log = document.getElementById('resp-deploy');
+  log.className  = 'resp-panel warn';
+  log.textContent = `Deploying: ${gv('fw1-hostname')} (${ip1}) + ${gv('fw2-hostname')} (${ip2})\n`;
+
+  const append = msg => { log.textContent += msg; };
+
+  async function step(dotId, label, fn) {
+    setDot(dotId, 'pending');
+    append(`\n=> ${label}...`);
+    try {
+      const ok = await fn();
+      if (ok === false) throw new Error('step failed');
+      setDot(dotId, 'ok'); append(' done'); return true;
+    } catch(e) {
+      setDot(dotId, 'err');
+      append(` FAILED: ${e.message}`);
+      log.className = 'resp-panel err';
+      btn.disabled = false; return false;
+    }
+  }
+
+  if (!await step('dd-conn', 'Verify connectivity (init credentials)', async () => {
+    for (const [fw,ip] of [[1,ip1],[2,ip2]]) {
+      const r = await proxyCall({fw_ip:ip, type:'keygen', user:gv('init-user'), password:gv('init-password')});
+      if (!isOk(r)) throw new Error(`FW${fw} unreachable: ${r.error||r.response||''}`);
+    }
+  })) return;
+
+  if (!await step('dd-user', 'Create local user & commit', async () => {
+    for (const [fw,ip] of [[1,ip1],[2,ip2]]) {
+      const r = await createLocalUser(ip);
+      if (!isOk(r)) throw new Error(`FW${fw} user create failed: ${r.error||r.response||''}`);
+      const rc = await xmlCall(ip, 'commit', null, null, null, gv('init-user'), gv('init-password'));
+      if (!isOk(rc)) throw new Error(`FW${fw} commit failed: ${rc.error||rc.response||''}`);
+    }
+  })) return;
+
+  if (!await step('dd-ha',      'HA configuration',               async () => { await pushHA(1);      await pushHA(2);      })) return;
+  if (!await step('dd-zones',   'Security zones',                  async () => { await pushZones(1);   await pushZones(2);   })) return;
+  if (!await step('dd-iface',   'Interfaces & floating IPs',       async () => { await pushIfaces(1);  await pushIfaces(2);  })) return;
+  if (!await step('dd-routing', 'Virtual router & static routes',  async () => { await pushRouting(1); await pushRouting(2); })) return;
+  if (!await step('dd-policy',  'Security policy',                 async () => { await pushPolicy(1);  await pushPolicy(2);  })) return;
+
+  if (!await step('dd-commit', 'Final commit (local/test123!)', async () => {
+    for (const ip of [ip1, ip2]) {
+      const r = await xmlCall(ip, 'commit', null, null, null, 'local', 'test123!');
+      if (!isOk(r)) throw new Error(`commit failed on ${ip}: ${r.error||r.response||''}`);
+    }
+  })) return;
+
+  log.className   = 'resp-panel ok';
+  log.textContent += '\n\nDeployment complete. Both firewalls committed successfully.';
+  btn.disabled = false;
+}
+
+function resetDeploy() {
+  ['conn','user','ha','zones','iface','routing','policy','commit']
+    .forEach(id => setDot(`dd-${id}`, 'idle'));
+  const el = document.getElementById('resp-deploy');
+  el.className  = 'resp-panel';
+  el.textContent = 'Ready — fill in Firewall Pair Setup and press Deploy all.';
+}
+
+function addPolicyRow() {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input value="new-rule"/></td>
+    <td><select><option>inside</option><option>untrust</option><option>any</option></select></td>
+    <td><select><option>untrust</option><option>inside</option><option>any</option></select></td>
+    <td><input value="any"/></td><td><input value="any"/></td><td><input value="any"/></td>
+    <td><select><option>allow</option><option>deny</option><option>drop</option></select></td>
+    <td><button class="btn btn-danger" style="padding:3px 8px;font-size:11px"
+      onclick="delRow(this)">x</button></td>`;
+  document.getElementById('policy-body').appendChild(tr);
+}
+function delRow(btn) { btn.closest('tr').remove(); }
+
+window.addEventListener('load', () => {
+  checkProxy();
+  setInterval(checkProxy, 30000);
+  updateConsole();
+});
+</script>
+</body>
+</html>
